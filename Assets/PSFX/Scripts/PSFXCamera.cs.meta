@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 704e14070bca94c43a73aa4e29504439
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 164607
+  packageName: PSFX
+  packageVersion: 2.0
+  assetPath: Assets/PSFX/Scripts/PSFXCamera.cs
+  uploadId: 409773

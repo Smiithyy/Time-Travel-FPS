@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: aa352eb366a477c4db7ebd3d7c12d84f
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 164607
+  packageName: PSFX
+  packageVersion: 2.0
+  assetPath: Assets/PSFX/Demo/Materials/PSFX-Demo_Gemstone.mat
+  uploadId: 409773

@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: d69d36e81c8555f488713471dc206a20
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 164607
+  packageName: PSFX
+  packageVersion: 2.0
+  assetPath: Assets/PSFX/Editor/PSXShaderGUI.cs
+  uploadId: 409773
