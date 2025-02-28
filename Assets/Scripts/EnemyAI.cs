@@ -1,5 +1,7 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.AI;
+using System.Collections;
+using System.Collections.Generic;
 
 public class EnemyAI : MonoBehaviour
 {
@@ -11,6 +13,8 @@ public class EnemyAI : MonoBehaviour
     private NavMeshAgent agent;
     private Transform player;
     private Animator animator;
+    private bool hasReachedPoint = false;
+
 
     [Header("Enemy Vision Settings")]
     public float fieldOfViewAngle = 90f; // How wide the enemy's vision is
@@ -30,30 +34,41 @@ public class EnemyAI : MonoBehaviour
     {
         float distance = Vector3.Distance(transform.position, player.position);
 
-        if (distance <= attackRange && CanSeePlayer()) // Only attack if the enemy sees the player
+        if (distance <= attackRange && CanSeePlayer())
         {
             AttackPlayer();
-            // Make the enemy always face the player while attacking
-            FacePlayer(); // Rotate to face the player while attacking
+            FacePlayer();
         }
-        else if (distance <= detectionRange && CanSeePlayer()) // Only chase if the enemy sees the player
+        else if (distance <= detectionRange && CanSeePlayer())
         {
             animator.SetBool("isAttacking", false);
-            agent.isStopped = false; // Resume movement
+            agent.isStopped = false;
             ChasePlayer();
         }
-        else // If no player detected, patrol
+        else
         {
             animator.SetBool("isAttacking", false);
 
-            // Check if the enemy has reached the patrol point before switching
-            if (!agent.pathPending && agent.remainingDistance < 0.5f)
+            // Ensure the enemy only stops when it reaches the patrol point
+            if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.1f)
             {
-                currentPoint = (currentPoint + 1) % patrolPoints.Length;
-                GoToNextPoint();
+                if (!hasReachedPoint)  // Prevents looping back & forth
+                {
+                    hasReachedPoint = true;
+                    Debug.Log("Enemy reached patrol point: " + currentPoint);
+                    GoToNextPoint();
+                }
+            }
+            else
+            {
+                hasReachedPoint = false; // Reset when moving
             }
         }
     }
+
+
+
+
 
     // Patrol between points
     void GoToNextPoint()
@@ -61,14 +76,69 @@ public class EnemyAI : MonoBehaviour
         if (patrolPoints.Length == 0)
             return;
 
-        // Ensure the enemy is moving
+        // Stop movement fully before processing the next step
+        agent.isStopped = true;
+        agent.velocity = Vector3.zero;  // Prevents sliding
+        animator.SetBool("isWalking", false);  // Play idle animation
+
+        Debug.Log("Enemy stopped at patrol point: " + currentPoint);
+
+        // Start idle pause before moving again
+        StartCoroutine(IdlePause());
+    }
+
+
+
+
+    IEnumerator IdlePause()
+    {
+        Debug.Log("Pausing at patrol point: " + currentPoint);
+
+        // Step 1: Rotate before moving again
+        yield return StartCoroutine(SmoothTurn(patrolPoints[currentPoint].position));
+
+        // Step 2: Wait before continuing patrol
+        yield return new WaitForSeconds(2f);
+
+        // Step 3: Move to next patrol point
+        Vector3 nextPoint = patrolPoints[currentPoint].position;
         agent.isStopped = false;
         animator.SetBool("isWalking", true);
-        animator.SetBool("isAttacking", false);
 
-        // Set the patrol destination
-        agent.SetDestination(patrolPoints[currentPoint].position);
+        Debug.Log("Moving to next patrol point: " + currentPoint);
+
+        // Step 4: Set destination and update patrol point index AFTER movement starts
+        agent.SetDestination(nextPoint);
+        currentPoint = (currentPoint + 1) % patrolPoints.Length;
     }
+
+    IEnumerator SmoothTurn(Vector3 targetPoint)
+    {
+        Vector3 direction = (targetPoint - transform.position).normalized;
+        direction.y = 0; // Prevents tilting
+
+        Quaternion targetRotation = Quaternion.LookRotation(direction);
+
+        Debug.Log("Turning towards patrol point: " + currentPoint);
+
+        // Step 1: Stop movement while turning
+        agent.isStopped = true;
+        agent.velocity = Vector3.zero;
+
+        // Step 2: Rotate smoothly towards the target point
+        while (Quaternion.Angle(transform.rotation, targetRotation) > 1f)
+        {
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 5f);
+            yield return null;
+        }
+
+        // Step 3: Snap to exact rotation before moving
+        transform.rotation = targetRotation;
+
+        yield return new WaitForSeconds(0.1f); // Small delay to prevent instant movement issues
+    }
+
+
 
     // Chase the player
     void ChasePlayer()
