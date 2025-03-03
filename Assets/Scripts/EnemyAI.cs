@@ -1,192 +1,219 @@
 ﻿using UnityEngine;
 using UnityEngine.AI;
 using System.Collections;
-using System.Collections.Generic;
 
 public class EnemyAI : MonoBehaviour
 {
+    [Header("Patrol Settings")]
     public Transform[] patrolPoints;
+    private int currentPoint = 0;
+    private bool isReturningToPatrol = false;
+
+    [Header("Detection Settings")]
     public float detectionRange = 10f;
     public float attackRange = 3f;
 
-    private int currentPoint = 0;
+    [Header("References")]
     private NavMeshAgent agent;
     private Transform player;
     private Animator animator;
-    private bool hasReachedPoint = false;
-
 
     [Header("Enemy Vision Settings")]
-    public float fieldOfViewAngle = 90f; // How wide the enemy's vision is
-    public float visionDistance = 15f; // How far the enemy can see
-    public LayerMask obstacleMask; // Walls, objects that block vision
+    public float fieldOfViewAngle = 90f;
+    public float visionDistance = 15f;
+    public LayerMask obstacleMask;
 
     void Start()
     {
         agent = GetComponent<NavMeshAgent>();
-        animator = GetComponent<Animator>(); // Get Animator component
+        animator = GetComponent<Animator>();
         player = GameObject.FindGameObjectWithTag("Player").transform;
 
-        GoToNextPoint();
+        animator.applyRootMotion = false;
+        agent.speed = 2f;
+
+        if (patrolPoints.Length > 0)
+        {
+            StartCoroutine(StartPatrolProperly());  // 🔹 Ensure the first patrol move is correct
+        }
     }
 
     void Update()
     {
         float distance = Vector3.Distance(transform.position, player.position);
 
+        // 🔹 Ensure animations are always synced with movement
+        if (agent.velocity.magnitude > 0.1f)
+        {
+            animator.SetBool("isWalking", true);
+        }
+        else
+        {
+            animator.SetBool("isWalking", false);
+        }
+
         if (distance <= attackRange && CanSeePlayer())
         {
             AttackPlayer();
-            FacePlayer();
         }
         else if (distance <= detectionRange && CanSeePlayer())
         {
-            animator.SetBool("isAttacking", false);
-            agent.isStopped = false;
             ChasePlayer();
         }
         else
         {
-            animator.SetBool("isAttacking", false);
-
-            // Ensure the enemy only stops when it reaches the patrol point
-            if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.1f)
+            if (!isReturningToPatrol)
             {
-                if (!hasReachedPoint)  // Prevents looping back & forth
-                {
-                    hasReachedPoint = true;
-                    Debug.Log("Enemy reached patrol point: " + currentPoint);
-                    GoToNextPoint();
-                }
-            }
-            else
-            {
-                hasReachedPoint = false; // Reset when moving
+                StartCoroutine(ReturnToPatrol());
             }
         }
     }
 
 
 
-
-
-    // Patrol between points
-    void GoToNextPoint()
+    IEnumerator StartPatrolProperly()
     {
-        if (patrolPoints.Length == 0)
-            return;
+        yield return new WaitForSeconds(0.5f);  // 🔹 Give Unity time to initialize everything
 
-        // Stop movement fully before processing the next step
-        agent.isStopped = true;
-        agent.velocity = Vector3.zero;  // Prevents sliding
-        animator.SetBool("isWalking", false);  // Play idle animation
-
-        Debug.Log("Enemy stopped at patrol point: " + currentPoint);
-
-        // Start idle pause before moving again
-        StartCoroutine(IdlePause());
+        agent.isStopped = false;  // 🔹 Ensure movement starts correctly
+        agent.ResetPath();
+        GoToNextPoint();
+    }
+    // 🔹 Delay before setting first patrol point to prevent bouncing
+    IEnumerator StartPatrolAfterDelay()
+    {
+        yield return new WaitForSeconds(0.2f);
+        GoToNextPoint();
     }
 
-
-
-
-    IEnumerator IdlePause()
+    IEnumerator ReturnToPatrol()
     {
-        Debug.Log("Pausing at patrol point: " + currentPoint);
+        isReturningToPatrol = true;
+        yield return new WaitForSeconds(3f);
 
-        // Step 1: Rotate before moving again
-        yield return StartCoroutine(SmoothTurn(patrolPoints[currentPoint].position));
-
-        // Step 2: Wait before continuing patrol
-        yield return new WaitForSeconds(2f);
-
-        // Step 3: Move to next patrol point
-        Vector3 nextPoint = patrolPoints[currentPoint].position;
-        agent.isStopped = false;
+        animator.SetBool("isRunning", false);
+        animator.SetBool("isAttacking", false);
         animator.SetBool("isWalking", true);
 
-        Debug.Log("Moving to next patrol point: " + currentPoint);
-
-        // Step 4: Set destination and update patrol point index AFTER movement starts
-        agent.SetDestination(nextPoint);
-        currentPoint = (currentPoint + 1) % patrolPoints.Length;
+        agent.speed = 2f;
+        GoToNextPoint();
+        isReturningToPatrol = false;
     }
 
-    IEnumerator SmoothTurn(Vector3 targetPoint)
+    void GoToNextPoint()
     {
-        Vector3 direction = (targetPoint - transform.position).normalized;
-        direction.y = 0; // Prevents tilting
+        if (patrolPoints.Length == 0) return;
 
-        Quaternion targetRotation = Quaternion.LookRotation(direction);
+        Vector3 nextPoint = patrolPoints[currentPoint].position;
 
-        Debug.Log("Turning towards patrol point: " + currentPoint);
+        agent.isStopped = false;
+        agent.ResetPath();
+        agent.SetDestination(nextPoint);
 
-        // Step 1: Stop movement while turning
-        agent.isStopped = true;
-        agent.velocity = Vector3.zero;
+        Debug.Log($"Moving to patrol point {currentPoint}");
 
-        // Step 2: Rotate smoothly towards the target point
-        while (Quaternion.Angle(transform.rotation, targetRotation) > 1f)
+        StartCoroutine(CheckPatrolArrival());
+    }
+
+
+
+
+    IEnumerator SetNextPatrolPoint()
+    {
+        yield return new WaitForSeconds(0.2f); // Small delay before setting a new path
+
+        agent.isStopped = false;
+        agent.SetDestination(patrolPoints[currentPoint].position);
+        StartCoroutine(CheckPatrolArrival());
+    }
+
+    IEnumerator CheckPatrolArrival()
+    {
+        while (true)
         {
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 5f);
+            if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
+            {
+                agent.isStopped = true;
+                agent.velocity = Vector3.zero;
+                agent.ResetPath();
+
+                animator.SetBool("isWalking", false);  // Stop walking only after fully stopping
+
+                Vector3 nextPoint = patrolPoints[(currentPoint + 1) % patrolPoints.Length].position;
+                StartCoroutine(SmoothTurn(nextPoint));
+
+                yield return new WaitForSeconds(1f); // 🔹 Reduce idle time
+
+                currentPoint = (currentPoint + 1) % patrolPoints.Length;
+                agent.SetDestination(patrolPoints[currentPoint].position);
+                agent.isStopped = false;
+
+                yield return null;  // 🔹 Wait a single frame before triggering walk
+
+                if (agent.velocity.magnitude > 0.1f)  // 🔹 Only switch animation if actually moving
+                {
+                    animator.SetBool("isWalking", true);
+                }
+
+                break;
+            }
             yield return null;
         }
-
-        // Step 3: Snap to exact rotation before moving
-        transform.rotation = targetRotation;
-
-        yield return new WaitForSeconds(0.1f); // Small delay to prevent instant movement issues
     }
 
-
-
-    // Chase the player
     void ChasePlayer()
     {
-        agent.isStopped = false;  // Ensure enemy doesn't freeze
+        if (!CanSeePlayer())
+        {
+            StartCoroutine(ReturnToPatrol());
+            return;
+        }
+
+        if (!agent.enabled) agent.enabled = true;
+
+        agent.isStopped = false;
+        agent.speed = 3f;
         agent.SetDestination(player.position);
-        animator.SetBool("isWalking", true);  // Ensure walking animation is set
+        FacePlayer();
+
+        if (!animator.GetCurrentAnimatorStateInfo(0).IsName("run"))
+        {
+            animator.Play("run", 0, 0);
+        }
+
+        animator.SetBool("isRunning", true);
+        animator.SetBool("isWalking", false);
+        animator.SetBool("isAttacking", false);
     }
 
     void FacePlayer()
     {
         Vector3 direction = (player.position - transform.position).normalized;
-        direction.y = 0; // Prevent tilting
+        direction.y = 0; // 🔹 Prevent tilting
+
         Quaternion lookRotation = Quaternion.LookRotation(direction);
-        transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
+        transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 10f);
     }
 
-    // Attack the player
+
+
     void AttackPlayer()
     {
-        agent.isStopped = true; // Stop moving while attacking
+        agent.isStopped = true; // Stop movement while attacking
+        animator.SetBool("isRunning", false);
         animator.SetBool("isWalking", false);
         animator.SetBool("isAttacking", true);
 
-        // Rotate to face the player (but only when attacking)
-        FacePlayer();
+        StartCoroutine(FacePlayerWhileAttacking());
     }
-
-
-    void ResumeChase()
+    IEnumerator FacePlayerWhileAttacking()
     {
-        agent.isStopped = false;
-        animator.SetBool("isWalking", true); // Go back to walking after attacking
-        ChasePlayer();
-    }
+        while (animator.GetBool("isAttacking")) // 🔹 Keep rotating while attacking
+        {
+            FacePlayer(); // 🔹 Call the function to smoothly rotate
 
-    // If the enemy is hit
-    public void TakeDamage()
-    {
-        ChasePlayer(); // Enemy reacts and starts chasing
-    }
-
-    // Enemy dies
-    public void Die()
-    {
-        animator.SetTrigger("Die"); // Play death animation
-        agent.isStopped = true;
-        this.enabled = false; // Disable AI after death
+            yield return null; // 🔹 Wait for the next frame to avoid freezing
+        }
     }
 
     bool CanSeePlayer()
@@ -195,39 +222,34 @@ public class EnemyAI : MonoBehaviour
         Vector3 directionToPlayer = (player.position - rayOrigin).normalized;
         float angleToPlayer = Vector3.Angle(transform.forward, directionToPlayer);
 
+        // 🔹 Give the enemy full 360° vision while chasing
+        float currentFOV = animator.GetBool("isRunning") ? 360f : fieldOfViewAngle;
 
+        if (angleToPlayer > currentFOV / 2f) return false;
+        if (Vector3.Distance(transform.position, player.position) > detectionRange) return false;
 
-        if (angleToPlayer > fieldOfViewAngle / 2f)
-        {
-            Debug.Log("Player is OUTSIDE enemy FOV");
-            return false;
-        }
-
-        // Debug: Draw the ray in Scene View
-        Debug.DrawRay(rayOrigin, directionToPlayer * visionDistance, Color.red, 0.1f);
-
-        // Raycast to check if there's an obstacle
+        // 🔹 Raycast to check if the player is visible (not blocked by walls)
         if (Physics.Raycast(rayOrigin, directionToPlayer, out RaycastHit hit, visionDistance, obstacleMask))
         {
-            Debug.Log("Raycast hit: " + hit.collider.name);
-
-            if (hit.collider.CompareTag("Player")) // Check if it's hitting the player
-            {
-                Debug.Log("ENEMY SEES THE PLAYER!");
-                Debug.DrawRay(rayOrigin, directionToPlayer * hit.distance, Color.green, 0.1f);
-                return true;
-            }
-            else
-            {
-                Debug.Log("Something is blocking view: " + hit.collider.name);
-            }
-        }
-        else
-        {
-            Debug.Log("Raycast did not hit anything.");
+            if (hit.collider.CompareTag("Player")) return true;
         }
 
         return false;
     }
 
+    IEnumerator SmoothTurn(Vector3 targetPoint)
+    {
+        Vector3 direction = (targetPoint - transform.position).normalized;
+        direction.y = 0;
+
+        Quaternion targetRotation = Quaternion.LookRotation(direction);
+
+        while (Quaternion.Angle(transform.rotation, targetRotation) > 1f)
+        {
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 5f);
+            yield return null;
+        }
+
+        transform.rotation = targetRotation;
+    }
 }
